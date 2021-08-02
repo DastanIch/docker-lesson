@@ -1,0 +1,213 @@
+Скачиваем docker desktop, если вы на маке:
+https://www.docker.com/products/docker-desktop
+
+---------------------------------------------------
+
+Запускаем докер и открываем терминал
+
+docker --help - все команды с описанием
+
+---------------------------------------------------
+
+Запускаем первый контейнер
+
+docker run hello-world  - выведет сообщение с приветствием 
+docker images           - выводит список локальных образов, в списке должен быть hello-world
+
+---------------------------------------------------
+
+https://hub.docker.com - официальный реестр образов, можно искать образы как на нем, так и с помощью команды docker search
+
+---------------------------------------------------
+
+Скачиваем образ nginx
+
+	docker pull nginx:latest
+docker images           - выводит список локальных образов, в списке должен быть hello-world и nginx
+
+---------------------------------------------------
+
+Запускаем контейнер из образа nginx
+
+docker run -d -p 8080:80 nginx - (-d = daemon) (-p пробросить порт контейнера 80 на порт нашего хоста 8080)
+
+Переходим на страницу http://localhost:8080 и видим страницу nginx, это значит, что контейнер работает
+
+---------------------------------------------------
+
+Проверяем контейнеры
+
+docker ps - выведет список активных(running) контейнеров, в списке должен быть nginx
+docker ps -a - (-a = all) выведет все контейнеры, включая завершенные, приостановленные, активные
+
+---------------------------------------------------
+
+Остальные команды:
+
+docker stop ‘containerID’ - остановит контейнер
+docker start ‘containerID’ - запустит остановленный контейнер
+docker exec -it ‘containerID’ bash - запустит интерактивный терминал запущенного контейнера
+docker rm ‘containerID’ - удаляет контейнер, для того, чтобы удалить контейнер, нужно чтобы контейнер не был в статусе running
+docker rm $(docker ps -aq) - удаляет все контейнеры, чтобы не писать отдельные команды копируя id контейнеров
+docker kill ‘containerID’ - убьет контейнер, и избавит вас от написания двух команд (docker stop & docker rm)
+docker rmi ‘imageName’ - удаляет скачанный или созданный образ из локальной библиотеки образов
+docker commit ‘containerID’ ‘newImageName’ - создает образ из активного контейнера под новым именем
+docker save -o <save_path_.tar> ‘imageName’ - сохраняет образ в архивированный файл tar
+docker load -i <path_to_image.tar> - загружает образ из архива tar в локальную библиотеку образов docker
+
+<‘containerID’ можно писать через пробел, если вы хотите применить команду к нескольким контейнерам>
+
+---------------------------------------------------
+
+С помощью команд, которые указаны выше остановите все контейнеры и удалите их
+
+---------------------------------------------------
+
+директивы Dockerfile:
+
+FROM - главный образ, с которого идет сборка
+MAINTAINER name <mail> - кто собрал
+RUN - запускает команду
+CMD - запускает процесс
+COPY - копирует файлы из нашего хоста внутрь контейнера(COPY . /app - первый параметр наш хост, второй параметр внутри контейнера)
+EXPOSE - открыть порт(EXPOSE 80 - открыть порт 80)
+WORKDIR - устанавливает рабочую директорию, мы попадаем в нее при заходе в терминал контейнера
+ARG - устанавливает аргумент
+ENV - устанавливает переменную env
+
+---------------------------------------------------
+
+Создадим папку docker
+
+	cd ~ 
+	mkdir docker 
+
+Переходим
+	
+	cd docker
+
+Создадим файл с названием Dockerfile с содержимым:
+
+FROM nginx:latest
+MAINTAINER abusitapo <dstnsmail@gmail.com>
+RUN echo "Hello from my own image container!" > /usr/share/nginx/html/index.html
+CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 80
+
+Соберем свой образ из dockerfile
+	docker build ./ -t ‘test:v1’ 
+
+Вызовем команду 
+	docker images
+
+Копируем IMAGE ID только что созданного образа
+
+Запускаем контейнер 
+	docker run -d -p 8080:80 ‘IMAGE ID’
+
+Переходим в браузере на адрес http://localhost:8080 и видим наше сообщение
+
+--------------------------------------------------- 
+
+С помощью команд, которые указаны выше остановите все контейнеры и удалите их
+
+---------------------------------------------------
+
+Переименуем Dockerfile
+	mv Dockerfile Dockerfile-old
+
+Создадим папку docker
+	mkdir docker
+
+Создадим файл docker/nginx/Dockerfile:
+FROM nginx:latest
+MAINTAINER abusitapo <dstnsmail@gmail.com>
+
+Создадим файл docker/nginx/conf.d/default.conf:
+server {
+    listen       80;
+    server_name  localhost;
+
+    root   /app;
+
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_index index.php;
+        fastcgi_pass php:9000;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
+
+
+
+Создадим файл docker/php/Dockerfile:
+FROM php:8.0-fpm
+MAINTAINER abusitapo <dstnsmail@gmail.com>
+CMD ["php-fpm”]
+
+Создаем файл public/index.php:
+<?php
+echo 'Hello from PHP inside NGINX container!';
+
+Создадим файл docker/mysql/Dockerfile:
+FROM mysql:latest
+MAINTAINER abusitapo <dstnsmail@gmail.com>
+
+
+
+Создадим файл docker-compose.yaml с содержимым:
+version: "3"
+
+services:
+
+  nginx:
+    build: './docker/nginx'
+    container_name: docker-compose-nginx
+    ports:
+      - '8080:80'
+    volumes:
+      - ./public:/app
+      - ./docker/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - php
+
+  php:
+    build: './docker/php'
+    container_name: docker-compose-php
+    ports:
+      - '9000:9000'
+    volumes:
+      - ./public:/app
+    depends_on:
+      - mysql
+
+  mysql:
+    build: './docker/mysql'
+    platform: x86_64
+    ports:
+      - '3306:3306'
+    volumes:
+      - /opt/homebrew/var/mysql:/var/lib/mysql
+
+
+Запустим 
+	docker-compose up —build -d
+
+Проверяем 
+	docker ps - должно вывести 3 контейнера: nginx, php, mysql  
+
+Переходим на http://localhost:8080 и видим сообщение Hello from PHP inside NGINX container!
+
+---------------------------------------------------
+
+Сворачиваем нашу связку контейнеров
+	docker-compose down
+
+---------------------------------------------------
+
